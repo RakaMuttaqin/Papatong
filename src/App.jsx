@@ -19,7 +19,9 @@ import {
   Database,
   Check,
   Sun,
-  Moon
+  Moon,
+  Mars,
+  Venus
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -66,10 +68,14 @@ const THEMES = {
 };
 
 const SAMPLE_MEMBERS = [
-  "Rian Ardianto", "Siti Rahmawati", "Budi Santoso", "Laras Amalia", 
-  "Ahmad Fauzi", "Dewi Lestari", "Eko Prasetyo", "Nadia Safitri", 
-  "Dimas Pratama", "Amelia Putri", "Fajar Nugraha", "Rina Susanti",
-  "Yusuf Ibrahim", "Mega Wijaya", "Aditya Perkasa", "Gita Ayu"
+  { name: "Rian Ardianto", gender: "male" }, { name: "Siti Rahmawati", gender: "female" },
+  { name: "Budi Santoso", gender: "male" }, { name: "Laras Amalia", gender: "female" },
+  { name: "Ahmad Fauzi", gender: "male" }, { name: "Dewi Lestari", gender: "female" },
+  { name: "Eko Prasetyo", gender: "male" }, { name: "Nadia Safitri", gender: "female" },
+  { name: "Dimas Pratama", gender: "male" }, { name: "Amelia Putri", gender: "female" },
+  { name: "Fajar Nugraha", gender: "male" }, { name: "Rina Susanti", gender: "female" },
+  { name: "Yusuf Ibrahim", gender: "male" }, { name: "Mega Wijaya", gender: "female" },
+  { name: "Aditya Perkasa", gender: "male" }, { name: "Gita Ayu", gender: "female" }
 ];
 
 export default function App() {
@@ -88,6 +94,7 @@ export default function App() {
 
   const [members, setMembers] = useState(SAMPLE_MEMBERS);
   const [newMemberName, setNewMemberName] = useState('');
+  const [newMemberGender, setNewMemberGender] = useState('male');
   const [bulkText, setBulkText] = useState('');
   const [isBulkMode, setIsBulkMode] = useState(false);
 
@@ -125,11 +132,11 @@ export default function App() {
     if (e) e.preventDefault();
     const name = newMemberName.trim();
     if (!name) return;
-    if (members.includes(name)) {
+    if (members.some(m => m.name === name)) {
       showToast('Nama anggota sudah terdaftar!');
       return;
     }
-    setMembers([...members, name]);
+    setMembers([...members, { name, gender: newMemberGender }]);
     setNewMemberName('');
     showToast(`Ditambahkan: ${name}`);
   };
@@ -144,15 +151,22 @@ export default function App() {
       return;
     }
 
-    const uniqueNew = lines.filter(name => !members.includes(name));
-    setMembers([...members, ...uniqueNew]);
+    const existingNames = members.map(m => m.name);
+    const uniqueNew = lines.filter(name => !existingNames.includes(name));
+    setMembers([...members, ...uniqueNew.map(name => ({ name, gender: 'female' }))]);
     setBulkText('');
     setIsBulkMode(false);
     showToast(`Berhasil mengimpor ${uniqueNew.length} anggota.`);
   };
 
+  const handleToggleGender = (index) => {
+    setMembers(members.map((m, idx) =>
+      idx === index ? { ...m, gender: m.gender === 'male' ? 'female' : 'male' } : m
+    ));
+  };
+
   const handleRemoveMember = (indexToRemove) => {
-    const name = members[indexToRemove];
+    const name = members[indexToRemove].name;
     setMembers(members.filter((_, idx) => idx !== indexToRemove));
     showToast(`Dihapus: ${name}`);
   };
@@ -188,81 +202,96 @@ export default function App() {
     }, 500);
   };
 
-  const performSplit = () => {
-    const shuffledList = [...members];
-    for (let i = shuffledList.length - 1; i > 0; i--) {
+  const shuffleArray = (arr) => {
+    for (let i = arr.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
-      [shuffledList[i], shuffledList[j]] = [shuffledList[j], shuffledList[i]];
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  };
+
+  const performSplit = () => {
+    const shuffledMales = shuffleArray([...members.filter(m => m.gender === 'male')]);
+    const shuffledFemales = shuffleArray([...members.filter(m => m.gender !== 'male')]);
+
+    const orderedMembers = [];
+    const maxLen = Math.max(shuffledMales.length, shuffledFemales.length);
+    for (let i = 0; i < maxLen; i++) {
+      if (i < shuffledMales.length) orderedMembers.push(shuffledMales[i]);
+      if (i < shuffledFemales.length) orderedMembers.push(shuffledFemales[i]);
     }
 
-    let calculatedGroups = [];
+    let numGroups;
 
     if (splitMode === 'numGroups') {
-      const numGroups = Math.min(targetCount, shuffledList.length);
-      for (let i = 0; i < numGroups; i++) {
-        calculatedGroups.push({
-          id: i + 1,
-          name: `Grup ${i + 1}`,
-          members: []
-        });
-      }
-
-      shuffledList.forEach((member, index) => {
-        const groupIndex = index % numGroups;
-        calculatedGroups[groupIndex].members.push(member);
-      });
-
+      numGroups = Math.min(targetCount, members.length);
     } else {
       const sizeLimit = Math.max(1, targetCount);
-      
-      if (leftoverStrategy === 'distribute' || leftoverStrategy === 'newGroup') {
-        let tempMembers = [...shuffledList];
-        let groupIndex = 1;
-
-        while (tempMembers.length > 0) {
-          if (leftoverStrategy === 'distribute' && tempMembers.length < sizeLimit && calculatedGroups.length > 0) {
-            tempMembers.forEach((member, i) => {
-              const targetIdx = i % calculatedGroups.length;
-              calculatedGroups[targetIdx].members.push(member);
-            });
-            tempMembers = [];
-          } else {
-            const chunk = tempMembers.splice(0, sizeLimit);
-            calculatedGroups.push({
-              id: groupIndex,
-              name: `Grup ${groupIndex}`,
-              members: chunk
-            });
-            groupIndex++;
-          }
-        }
+      if (leftoverStrategy === 'leaveOut') {
+        numGroups = Math.floor(members.length / sizeLimit) || 1;
       } else {
-        const possibleFullGroupsCount = Math.floor(shuffledList.length / sizeLimit);
-        let groupIndex = 1;
-
-        for (let i = 0; i < possibleFullGroupsCount; i++) {
-          const chunk = shuffledList.slice(i * sizeLimit, (i + 1) * sizeLimit);
-          calculatedGroups.push({
-            id: groupIndex,
-            name: `Grup ${groupIndex}`,
-            members: chunk
-          });
-          groupIndex++;
-        }
-
-        const leftOverList = shuffledList.slice(possibleFullGroupsCount * sizeLimit);
-        if (leftOverList.length > 0) {
-          calculatedGroups.push({
-            id: 'unassigned',
-            name: 'Cadangan (Sisa)',
-            isSpecial: true,
-            members: leftOverList
-          });
-        }
+        numGroups = Math.ceil(members.length / sizeLimit) || 1;
       }
     }
 
-    setShuffledGroups(calculatedGroups);
+    const groups = Array.from({ length: numGroups }, (_, i) => ({
+      id: i + 1,
+      name: `Grup ${i + 1}`,
+      members: []
+    }));
+
+    const groupTotals = Array(numGroups).fill(0);
+    const groupMales = Array(numGroups).fill(0);
+
+    orderedMembers.forEach(member => {
+      let bestScore = Infinity;
+      const candidates = [];
+
+      for (let g = 0; g < numGroups; g++) {
+        const score = groupTotals[g] * 100 + (member.gender === 'male' ? groupMales[g] : 0);
+        if (score < bestScore) {
+          bestScore = score;
+          candidates.length = 0;
+          candidates.push(g);
+        } else if (score === bestScore) {
+          candidates.push(g);
+        }
+      }
+
+      const bestIdx = candidates[Math.floor(Math.random() * candidates.length)];
+      groups[bestIdx].members.push(member);
+      groupTotals[bestIdx]++;
+      if (member.gender === 'male') groupMales[bestIdx]++;
+    });
+
+    if (splitMode !== 'numGroups') {
+      const sizeLimit = Math.max(1, targetCount);
+      if (leftoverStrategy === 'leaveOut') {
+        let overflow = [];
+        groups.forEach(g => {
+          if (g.members.length > sizeLimit) {
+            overflow.push(...g.members.splice(sizeLimit));
+          }
+        });
+        if (overflow.length > 0) {
+          groups.push({
+            id: 'unassigned', name: 'Cadangan (Sisa)', isSpecial: true, members: overflow
+          });
+        }
+      } else if (leftoverStrategy === 'distribute') {
+        let overflow = [];
+        groups.forEach(g => {
+          if (g.members.length > sizeLimit) {
+            overflow.push(...g.members.splice(sizeLimit));
+          }
+        });
+        overflow.forEach((m, i) => {
+          groups[i % numGroups].members.push(m);
+        });
+      }
+    }
+
+    setShuffledGroups(groups);
   };
 
   const handleDragStart = (e, member, sourceGroupIdx) => {
@@ -373,7 +402,10 @@ export default function App() {
   };
 
   const handleSelectRoster = (roster) => {
-    setMembers(roster.members);
+    const normalized = roster.members.map(m =>
+      typeof m === 'string' ? { name: m, gender: 'female' } : m
+    );
+    setMembers(normalized);
     setShuffledGroups([]);
     setShowRosterPicker(false);
     showToast(`Roster "${roster.name}" dimuat!`);
@@ -594,6 +626,18 @@ export default function App() {
 
               {!isBulkMode ? (
                 <form onSubmit={handleAddMember} className="flex gap-1.5 mb-4">
+                  <button
+                    type="button"
+                    onClick={() => setNewMemberGender(g => g === 'male' ? 'female' : 'male')}
+                    className={`p-2 rounded-lg border transition-colors ${
+                      newMemberGender === 'male'
+                        ? 'border-sky-400 bg-sky-50 text-sky-600 dark:border-sky-600 dark:bg-sky-950/30 dark:text-sky-400'
+                        : 'border-rose-300 bg-rose-50 text-rose-500 dark:border-rose-600 dark:bg-rose-950/30 dark:text-rose-400'
+                    }`}
+                    title={newMemberGender === 'male' ? 'Laki-laki' : 'Perempuan'}
+                  >
+                    {newMemberGender === 'male' ? <Mars className="h-4 w-4" /> : <Venus className="h-4 w-4" />}
+                  </button>
                   <input
                     type="text"
                     placeholder="Nama anggota..."
@@ -674,23 +718,35 @@ export default function App() {
                 {members.length === 0 ? (
                   <p className="text-center py-4 text-neutral-400 text-xs italic">Belum ada anggota.</p>
                 ) : (
-                  <div className="flex flex-wrap gap-1">
-                    {members.map((member, idx) => (
-                      <span
-                        key={idx}
-                        className="inline-flex items-center gap-1 pl-2.5 pr-1.5 py-1 bg-white dark:bg-neutral-900 border border-neutral-200/50 dark:border-neutral-800 text-[11px] rounded-md text-neutral-600 dark:text-neutral-300"
-                      >
-                        {member}
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveMember(idx)}
-                          className="hover:text-rose-500 p-0.5"
-                        >
-                          <X className="h-2.5 w-2.5" />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
+              <div className="flex flex-wrap gap-1">
+                {members.map((member, idx) => (
+                  <span
+                    key={idx}
+                    className="inline-flex items-center gap-1 pl-1.5 pr-1.5 py-1 bg-white dark:bg-neutral-900 border border-neutral-200/50 dark:border-neutral-800 text-[11px] rounded-md text-neutral-600 dark:text-neutral-300"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => handleToggleGender(idx)}
+                      className={`p-0.5 rounded transition-colors ${
+                        member.gender === 'male'
+                          ? 'text-sky-500 hover:text-sky-700'
+                          : 'text-rose-400 hover:text-rose-600'
+                      }`}
+                      title={member.gender === 'male' ? 'Laki-laki' : 'Perempuan'}
+                    >
+                      {member.gender === 'male' ? <Mars className="h-3 w-3" /> : <Venus className="h-3 w-3" />}
+                    </button>
+                    {member.name}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveMember(idx)}
+                      className="hover:text-rose-500 p-0.5"
+                    >
+                      <X className="h-2.5 w-2.5" />
+                    </button>
+                  </span>
+                ))}
+              </div>
                 )}
               </div>
 
@@ -924,7 +980,10 @@ export default function App() {
                               >
                                 <span className="flex items-center gap-1.5 truncate">
                                   <span className="text-neutral-400 text-[9px] font-mono">{mIdx + 1}</span>
-                                  {member}
+                                  <span className={member.gender === 'male' ? 'text-sky-500' : 'text-rose-400'}>
+                                    {member.gender === 'male' ? <Mars className="h-3 w-3" /> : <Venus className="h-3 w-3" />}
+                                  </span>
+                                  {member.name}
                                 </span>
                                 <span className="text-neutral-300 text-[10px]">☰</span>
                               </div>
