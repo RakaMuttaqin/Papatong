@@ -17,7 +17,9 @@ import {
   Cloud,
   CloudOff,
   Database,
-  Check
+  Check,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -71,8 +73,18 @@ const SAMPLE_MEMBERS = [
 ];
 
 export default function App() {
-  const [themeKey, setThemeKey] = useState('indigo');
+  const [themeKey, setThemeKey] = useState(() => localStorage.getItem('papatong-theme') || 'indigo');
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('papatong-dark-mode') === 'true');
   const currentTheme = THEMES[themeKey];
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', darkMode);
+    localStorage.setItem('papatong-dark-mode', darkMode);
+  }, [darkMode]);
+
+  useEffect(() => {
+    localStorage.setItem('papatong-theme', themeKey);
+  }, [themeKey]);
 
   const [members, setMembers] = useState(SAMPLE_MEMBERS);
   const [newMemberName, setNewMemberName] = useState('');
@@ -500,20 +512,33 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 p-1 bg-neutral-100 dark:bg-neutral-900 rounded-lg">
-            {Object.keys(THEMES).map((key) => (
-              <button
-                key={key}
-                onClick={() => setThemeKey(key)}
-                className={`px-3 py-1 text-[11px] font-medium rounded-md transition-all ${
-                  themeKey === key 
-                    ? 'bg-white dark:bg-neutral-800 shadow-sm font-semibold' 
-                    : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-700'
-                }`}
-              >
-                {THEMES[key].name.split(' ')[0]}
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 p-1 bg-neutral-100 dark:bg-neutral-900 rounded-lg">
+              {Object.keys(THEMES).map((key) => (
+                <button
+                  key={key}
+                  onClick={() => setThemeKey(key)}
+                  className={`px-3 py-1 text-[11px] font-medium rounded-md transition-all ${
+                    themeKey === key 
+                      ? 'bg-white dark:bg-neutral-800 shadow-sm font-semibold' 
+                      : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-700'
+                  }`}
+                >
+                  {THEMES[key].name.split(' ')[0]}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setDarkMode(!darkMode)}
+              className={`p-2 rounded-lg transition-all text-xs ${
+                darkMode
+                  ? 'bg-neutral-800 text-amber-400 hover:bg-neutral-700'
+                  : 'bg-neutral-100 text-neutral-500 hover:bg-neutral-200'
+              }`}
+              title={darkMode ? 'Mode Terang' : 'Mode Gelap'}
+            >
+              {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </button>
           </div>
 
         </div>
