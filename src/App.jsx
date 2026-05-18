@@ -214,15 +214,7 @@ export default function App() {
     const shuffledMales = shuffleArray([...members.filter(m => m.gender === 'male')]);
     const shuffledFemales = shuffleArray([...members.filter(m => m.gender !== 'male')]);
 
-    const orderedMembers = [];
-    const maxLen = Math.max(shuffledMales.length, shuffledFemales.length);
-    for (let i = 0; i < maxLen; i++) {
-      if (i < shuffledMales.length) orderedMembers.push(shuffledMales[i]);
-      if (i < shuffledFemales.length) orderedMembers.push(shuffledFemales[i]);
-    }
-
     let numGroups;
-
     if (splitMode === 'numGroups') {
       numGroups = Math.min(targetCount, members.length);
     } else {
@@ -239,16 +231,23 @@ export default function App() {
       name: `Grup ${i + 1}`,
       members: []
     }));
-
     const groupTotals = Array(numGroups).fill(0);
     const groupMales = Array(numGroups).fill(0);
 
-    orderedMembers.forEach(member => {
+    const baseMales = Math.floor(shuffledMales.length / numGroups);
+    const extraMales = shuffledMales.length % numGroups;
+    const maleTargets = Array.from({ length: numGroups }, (_, i) =>
+      i < extraMales ? baseMales + 1 : baseMales
+    );
+
+    shuffledMales.forEach(member => {
+      let bestIdx = -1;
       let bestScore = Infinity;
       const candidates = [];
 
       for (let g = 0; g < numGroups; g++) {
-        const score = groupTotals[g] * 100 + (member.gender === 'male' ? groupMales[g] : 0);
+        if (groupMales[g] >= maleTargets[g]) continue;
+        const score = groupTotals[g] * 100;
         if (score < bestScore) {
           bestScore = score;
           candidates.length = 0;
@@ -258,10 +257,30 @@ export default function App() {
         }
       }
 
-      const bestIdx = candidates[Math.floor(Math.random() * candidates.length)];
-      groups[bestIdx].members.push(member);
-      groupTotals[bestIdx]++;
-      if (member.gender === 'male') groupMales[bestIdx]++;
+      const idx = candidates[Math.floor(Math.random() * candidates.length)];
+      groups[idx].members.push(member);
+      groupTotals[idx]++;
+      groupMales[idx]++;
+    });
+
+    shuffledFemales.forEach(member => {
+      let bestScore = Infinity;
+      const candidates = [];
+
+      for (let g = 0; g < numGroups; g++) {
+        const score = groupTotals[g] * 100;
+        if (score < bestScore) {
+          bestScore = score;
+          candidates.length = 0;
+          candidates.push(g);
+        } else if (score === bestScore) {
+          candidates.push(g);
+        }
+      }
+
+      const idx = candidates[Math.floor(Math.random() * candidates.length)];
+      groups[idx].members.push(member);
+      groupTotals[idx]++;
     });
 
     if (splitMode !== 'numGroups') {
