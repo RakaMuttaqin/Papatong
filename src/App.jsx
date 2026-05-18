@@ -314,8 +314,8 @@ export default function App() {
   };
 
   const handleDragStart = (e, member, sourceGroupIdx) => {
-    setDraggedMember({ name: member, sourceIdx: sourceGroupIdx });
-    e.dataTransfer.setData('text/plain', member);
+    setDraggedMember({ name: member.name, sourceIdx: sourceGroupIdx });
+    e.dataTransfer.setData('text/plain', member.name);
   };
 
   const handleDragOver = (e) => {
@@ -345,7 +345,7 @@ export default function App() {
     shuffledGroups.forEach(g => {
       text += `📍 ${g.name} (${g.members.length} Anggota):\n`;
       g.members.forEach((m, i) => {
-        text += `   ${i + 1}. ${m}\n`;
+        text += `   ${i + 1}. ${m.name}\n`;
       });
       text += "\n";
     });
@@ -361,7 +361,7 @@ export default function App() {
     let csvContent = "data:text/csv;charset=utf-8,Kelompok,Nama Anggota\n";
     shuffledGroups.forEach(g => {
       g.members.forEach(m => {
-        csvContent += `"${g.name}","${m.replace(/"/g, '""')}"\n`;
+        csvContent += `"${g.name}","${m.name.replace(/"/g, '""')}"\n`;
       });
     });
 
