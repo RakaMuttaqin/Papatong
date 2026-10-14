@@ -21,7 +21,8 @@ import {
   Sun,
   Moon,
   Mars,
-  Venus
+  Venus,
+  Save
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -92,7 +93,7 @@ export default function App() {
     localStorage.setItem('papatong-theme', themeKey);
   }, [themeKey]);
 
-  const [members, setMembers] = useState(SAMPLE_MEMBERS);
+  const [members, setMembers] = useState([]);
   const [newMemberName, setNewMemberName] = useState('');
   const [newMemberGender, setNewMemberGender] = useState('male');
   const [bulkText, setBulkText] = useState('');
@@ -217,13 +218,15 @@ export default function App() {
     let numGroups;
     if (splitMode === 'numGroups') {
       numGroups = Math.min(targetCount, members.length);
-    } else {
+    } else if (splitMode === 'membersPerGroup') {
       const sizeLimit = Math.max(1, targetCount);
       if (leftoverStrategy === 'leaveOut') {
         numGroups = Math.floor(members.length / sizeLimit) || 1;
       } else {
         numGroups = Math.ceil(members.length / sizeLimit) || 1;
       }
+    } else if (splitMode === 'separateGender') {
+      numGroups = Math.max(1, targetCount);
     }
 
     const groups = Array.from({ length: numGroups }, (_, i) => ({
@@ -232,58 +235,85 @@ export default function App() {
       members: []
     }));
     const groupTotals = Array(numGroups).fill(0);
-    const groupMales = Array(numGroups).fill(0);
 
-    const baseMales = Math.floor(shuffledMales.length / numGroups);
-    const extraMales = shuffledMales.length % numGroups;
-    const maleTargets = Array.from({ length: numGroups }, (_, i) =>
-      i < extraMales ? baseMales + 1 : baseMales
-    );
+    if (splitMode === 'separateGender') {
+      // Split males into groups
+      const maleTargets = Array.from({ length: numGroups }, (_, i) =>
+        Math.floor(shuffledMales.length / numGroups)
+      );
+      let maleDistributed = 0;
+      shuffledMales.forEach((member, i) => {
+        const g = i % numGroups;
+        groups[g].members.push(member);
+        groupTotals[g]++;
+        maleDistributed++;
+      });
 
-    shuffledMales.forEach(member => {
-      let bestIdx = -1;
-      let bestScore = Infinity;
-      const candidates = [];
+      // Split females into groups
+      const femaleTargets = Array.from({ length: numGroups }, (_, i) =>
+        Math.floor(shuffledFemales.length / numGroups)
+      );
+      let femaleDistributed = 0;
+      shuffledFemales.forEach((member, i) => {
+        const g = i % numGroups;
+        groups[g].members.push(member);
+        groupTotals[g]++;
+        femaleDistributed++;
+      });
+    } else {
+      const groupMales = Array(numGroups).fill(0);
 
-      for (let g = 0; g < numGroups; g++) {
-        if (groupMales[g] >= maleTargets[g]) continue;
-        const score = groupTotals[g] * 100;
-        if (score < bestScore) {
-          bestScore = score;
-          candidates.length = 0;
-          candidates.push(g);
-        } else if (score === bestScore) {
-          candidates.push(g);
+      const baseMales = Math.floor(shuffledMales.length / numGroups);
+      const extraMales = shuffledMales.length % numGroups;
+      const maleTargets = Array.from({ length: numGroups }, (_, i) =>
+        i < extraMales ? baseMales + 1 : baseMales
+      );
+
+      shuffledMales.forEach(member => {
+        let bestIdx = -1;
+        let bestScore = Infinity;
+        const candidates = [];
+
+        for (let g = 0; g < numGroups; g++) {
+          if (groupMales[g] >= maleTargets[g]) continue;
+          const score = groupTotals[g] * 100;
+          if (score < bestScore) {
+            bestScore = score;
+            candidates.length = 0;
+            candidates.push(g);
+          } else if (score === bestScore) {
+            candidates.push(g);
+          }
         }
-      }
 
-      const idx = candidates[Math.floor(Math.random() * candidates.length)];
-      groups[idx].members.push(member);
-      groupTotals[idx]++;
-      groupMales[idx]++;
-    });
+        const idx = candidates[Math.floor(Math.random() * candidates.length)];
+        groups[idx].members.push(member);
+        groupTotals[idx]++;
+        groupMales[idx]++;
+      });
 
-    shuffledFemales.forEach(member => {
-      let bestScore = Infinity;
-      const candidates = [];
+      shuffledFemales.forEach(member => {
+        let bestScore = Infinity;
+        const candidates = [];
 
-      for (let g = 0; g < numGroups; g++) {
-        const score = groupTotals[g] * 100;
-        if (score < bestScore) {
-          bestScore = score;
-          candidates.length = 0;
-          candidates.push(g);
-        } else if (score === bestScore) {
-          candidates.push(g);
+        for (let g = 0; g < numGroups; g++) {
+          const score = groupTotals[g] * 100;
+          if (score < bestScore) {
+            bestScore = score;
+            candidates.length = 0;
+            candidates.push(g);
+          } else if (score === bestScore) {
+            candidates.push(g);
+          }
         }
-      }
 
-      const idx = candidates[Math.floor(Math.random() * candidates.length)];
-      groups[idx].members.push(member);
-      groupTotals[idx]++;
-    });
+        const idx = candidates[Math.floor(Math.random() * candidates.length)];
+        groups[idx].members.push(member);
+        groupTotals[idx]++;
+      });
+    }
 
-    if (splitMode !== 'numGroups') {
+    if (splitMode !== 'numGroups' && splitMode !== 'separateGender') {
       const sizeLimit = Math.max(1, targetCount);
       if (leftoverStrategy === 'leaveOut') {
         let overflow = [];
@@ -295,6 +325,20 @@ export default function App() {
         if (overflow.length > 0) {
           groups.push({
             id: 'unassigned', name: 'Cadangan (Sisa)', isSpecial: true, members: overflow
+          });
+        }
+      } else if (leftoverStrategy === 'newGroup') {
+        let overflow = [];
+        groups.forEach(g => {
+          if (g.members.length > sizeLimit) {
+            overflow.push(...g.members.splice(sizeLimit));
+          }
+        });
+        if (overflow.length > 0) {
+          groups.push({
+            id: 'unassigned',
+            name: 'Cadangan (Sisa)',
+            members: overflow
           });
         }
       } else if (leftoverStrategy === 'distribute') {
@@ -435,7 +479,7 @@ export default function App() {
       const { error } = await supabase
         .from('rosters')
         .delete()
-        .match({ id });
+        .eq('id', id);
 
       if (error) throw error;
       setSavedRosters(savedRosters.filter(r => r.id !== id));
@@ -458,11 +502,11 @@ export default function App() {
       )}
 
       {showClearConfirm && (
-        <div className="fixed inset-0 z-50 bg-neutral-950/20 dark:bg-neutral-950/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-950/20 dark:bg-neutral-950/60 backdrop-blur-sm">
           <div className={`p-6 rounded-2xl border max-w-sm w-full shadow-xl ${currentTheme.card}`}>
-            <h4 className="font-bold text-sm mb-2">Kosongkan Daftar?</h4>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-6 leading-relaxed">Semua nama anggota dan hasil kelompok saat ini akan dihapus secara permanen.</p>
-            <div className="flex gap-2 justify-end">
+            <h4 className="mb-2 text-sm font-bold">Kosongkan Daftar?</h4>
+            <p className="mb-6 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">Semua nama anggota dan hasil kelompok saat ini akan dihapus secara permanen.</p>
+            <div className="flex justify-end gap-2">
               <button 
                 onClick={() => setShowClearConfirm(false)}
                 className="px-3.5 py-1.5 rounded-lg text-xs font-medium border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-800"
@@ -481,10 +525,10 @@ export default function App() {
       )}
 
       {showSaveDialog && (
-        <div className="fixed inset-0 z-50 bg-neutral-950/20 dark:bg-neutral-950/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-950/20 dark:bg-neutral-950/60 backdrop-blur-sm">
           <div className={`p-6 rounded-2xl border max-w-sm w-full shadow-xl ${currentTheme.card}`}>
-            <h4 className="font-bold text-sm mb-2">Simpan Roster</h4>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4">{members.length} anggota akan disimpan.</p>
+            <h4 className="mb-2 text-sm font-bold">Simpan Roster</h4>
+            <p className="mb-4 text-xs text-neutral-500 dark:text-neutral-400">{members.length} anggota akan disimpan.</p>
             <input
               type="text"
               placeholder="Nama roster..."
@@ -493,7 +537,7 @@ export default function App() {
               className={`w-full bg-neutral-50 dark:bg-neutral-950/60 border text-xs px-3.5 py-2.5 rounded-lg focus:outline-none focus:ring-1 mb-4 ${currentTheme.ring} ${currentTheme.border}`}
               onKeyDown={(e) => e.key === 'Enter' && handleSaveToCloud()}
             />
-            <div className="flex gap-2 justify-end">
+            <div className="flex justify-end gap-2">
               <button 
                 onClick={() => { setShowSaveDialog(false); setRosterName(''); }}
                 className="px-3.5 py-1.5 rounded-lg text-xs font-medium border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-800"
@@ -513,16 +557,16 @@ export default function App() {
       )}
 
       {showRosterPicker && (
-        <div className="fixed inset-0 z-50 bg-neutral-950/20 dark:bg-neutral-950/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-950/20 dark:bg-neutral-950/60 backdrop-blur-sm">
           <div className={`p-6 rounded-2xl border max-w-sm w-full shadow-xl ${currentTheme.card}`}>
-            <div className="flex justify-between items-center mb-4">
-              <h4 className="font-bold text-sm">Roster Tersimpan</h4>
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-sm font-bold">Roster Tersimpan</h4>
               <button onClick={() => setShowRosterPicker(false)} className="text-neutral-400 hover:text-neutral-600">
-                <X className="h-4 w-4" />
+                <X className="w-4 h-4" />
               </button>
             </div>
             {savedRosters.length === 0 ? (
-              <p className="text-xs text-neutral-400 text-center py-6">Belum ada roster tersimpan.</p>
+              <p className="py-6 text-xs text-center text-neutral-400">Belum ada roster tersimpan.</p>
             ) : (
               <div className="space-y-1.5 max-h-64 overflow-y-auto">
                 {savedRosters.map((roster) => (
@@ -538,7 +582,7 @@ export default function App() {
                       onClick={() => handleDeleteRoster(roster.id)}
                       className="p-1 text-rose-400 hover:text-rose-600"
                     >
-                      <Trash2 className="h-3 w-3" />
+                      <Trash2 className="w-3 h-3" />
                     </button>
                   </div>
                 ))}
@@ -548,8 +592,8 @@ export default function App() {
         </div>
       )}
 
-      <header className="border-b border-neutral-200/50 dark:border-neutral-800/60 bg-white/40 dark:bg-neutral-950/40 backdrop-blur-md sticky top-0 z-30">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <header className="sticky top-0 z-30 border-b border-neutral-200/50 dark:border-neutral-800/60 bg-white/40 dark:bg-neutral-950/40 backdrop-blur-md">
+        <div className="flex flex-col items-center justify-between max-w-6xl gap-4 px-6 py-4 mx-auto sm:flex-row">
           
           <div className="flex items-center gap-2.5">
             <div className={`p-1.5 rounded-lg ${currentTheme.badge}`}>
@@ -588,39 +632,39 @@ export default function App() {
               }`}
               title={darkMode ? 'Mode Terang' : 'Mode Gelap'}
             >
-              {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
           </div>
 
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 pt-10">
+      <main className="max-w-6xl px-6 pt-10 mx-auto">
         
         <div className="mb-10 text-center sm:text-left">
           <h2 className="text-2xl font-light tracking-tight text-neutral-900 dark:text-neutral-100">
             Atur kelompok dengan <span className={`font-semibold ${currentTheme.textAccent}`}>seimbang</span> dan efisien.
           </h2>
-          <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">Masukkan nama, pilih aturan pembagian kelompok, dan biarkan sistem mengacak instan.</p>
+          <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-500">Masukkan nama, pilih aturan pembagian kelompok, dan biarkan sistem mengacak instan.</p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        <div className="grid items-start grid-cols-1 gap-8 lg:grid-cols-12">
           
-          <div className="lg:col-span-5 space-y-6">
+          <div className="space-y-6 lg:col-span-5">
             
             <div className={`rounded-xl border p-5 transition-all ${currentTheme.card}`}>
               
-              <div className="flex justify-between items-center mb-5">
+              <div className="flex items-center justify-between mb-5">
                 <div className="flex items-center gap-1.5">
-                  <Users className="h-4 w-4 text-neutral-400" />
-                  <span className="text-xs font-bold uppercase tracking-wider text-neutral-400">Anggota</span>
+                  <Users className="w-4 h-4 text-neutral-400" />
+                  <span className="text-xs font-bold tracking-wider uppercase text-neutral-400">Anggota</span>
                 </div>
                 <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${currentTheme.badge}`}>
                   {members.length} Orang
                 </span>
               </div>
 
-              <div className="flex border-b border-neutral-100 dark:border-neutral-800 mb-4 text-xs">
+              <div className="flex mb-4 text-xs border-b border-neutral-100 dark:border-neutral-800">
                 <button
                   onClick={() => setIsBulkMode(false)}
                   className={`flex-1 pb-2 font-medium transition-all ${
@@ -655,7 +699,7 @@ export default function App() {
                     }`}
                     title={newMemberGender === 'male' ? 'Laki-laki' : 'Perempuan'}
                   >
-                    {newMemberGender === 'male' ? <Mars className="h-4 w-4" /> : <Venus className="h-4 w-4" />}
+                    {newMemberGender === 'male' ? <Mars className="w-4 h-4" /> : <Venus className="w-4 h-4" />}
                   </button>
                   <input
                     type="text"
@@ -668,11 +712,11 @@ export default function App() {
                     type="submit"
                     className={`px-3.5 rounded-lg ${currentTheme.accent} transition-colors flex items-center justify-center`}
                   >
-                    <Plus className="h-4 w-4" />
+                    <Plus className="w-4 h-4" />
                   </button>
                 </form>
               ) : (
-                <div className="space-y-2 mb-4">
+                <div className="mb-4 space-y-2">
                   <textarea
                     rows="3"
                     placeholder="Ketik satu nama per baris..."
@@ -689,7 +733,7 @@ export default function App() {
                     </button>
                     <button
                       onClick={() => setIsBulkMode(false)}
-                      className="px-3 py-2 border border-neutral-200 dark:border-neutral-800 text-xs font-medium rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800 text-neutral-500"
+                      className="px-3 py-2 text-xs font-medium border rounded-lg border-neutral-200 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-neutral-500"
                     >
                       Batal
                     </button>
@@ -702,7 +746,7 @@ export default function App() {
                   onClick={handleLoadSample}
                   className="text-[11px] text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors flex items-center gap-1 font-medium"
                 >
-                  <Sparkles className="h-3 w-3" /> Muat Sampel
+                  <Sparkles className="w-3 h-3" /> Muat Sampel
                 </button>
                 <div className="flex items-center gap-2">
                   {isOnline && (
@@ -710,15 +754,15 @@ export default function App() {
                       <button
                         onClick={() => setShowSaveDialog(true)}
                         className="text-[11px] text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors flex items-center gap-1 font-medium"
-                      >
-                        <Cloud className="h-3 w-3" /> Simpan
-                      </button>
+>
+                      <Save className="w-3 h-3" /> Simpan Roster
+                    </button>
                       <button
                         onClick={handleLoadRosters}
                         disabled={isLoading}
                         className="text-[11px] text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors flex items-center gap-1 font-medium disabled:opacity-40"
                       >
-                        <Database className="h-3 w-3" /> Muat
+                        <Database className="w-3 h-3" /> Muat
                       </button>
                     </>
                   )}
@@ -727,7 +771,7 @@ export default function App() {
                       onClick={() => setShowClearConfirm(true)}
                       className="text-[11px] text-rose-500 hover:text-rose-600 transition-colors flex items-center gap-1 font-medium"
                     >
-                      <Trash2 className="h-3 w-3" /> Bersihkan
+                      <Trash2 className="w-3 h-3" /> Bersihkan
                     </button>
                   )}
                 </div>
@@ -735,7 +779,7 @@ export default function App() {
 
               <div className="max-h-44 overflow-y-auto border border-neutral-100 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-950/30 p-2.5 rounded-lg">
                 {members.length === 0 ? (
-                  <p className="text-center py-4 text-neutral-400 text-xs italic">Belum ada anggota.</p>
+                  <p className="py-4 text-xs italic text-center text-neutral-400">Belum ada anggota.</p>
                 ) : (
               <div className="flex flex-wrap gap-1">
                 {members.map((member, idx) => (
@@ -753,7 +797,7 @@ export default function App() {
                       }`}
                       title={member.gender === 'male' ? 'Laki-laki' : 'Perempuan'}
                     >
-                      {member.gender === 'male' ? <Mars className="h-3 w-3" /> : <Venus className="h-3 w-3" />}
+                      {member.gender === 'male' ? <Mars className="w-3 h-3" /> : <Venus className="w-3 h-3" />}
                     </button>
                     {member.name}
                     <button
@@ -774,14 +818,14 @@ export default function App() {
             <div className={`rounded-xl border p-5 transition-all ${currentTheme.card}`}>
               
               <div className="flex items-center gap-1.5 mb-5">
-                <Settings className="h-4 w-4 text-neutral-400" />
-                <span className="text-xs font-bold uppercase tracking-wider text-neutral-400">Aturan</span>
+                <Settings className="w-4 h-4 text-neutral-400" />
+                <span className="text-xs font-bold tracking-wider uppercase text-neutral-400">Aturan</span>
               </div>
 
               <div className="space-y-4">
                 <div>
                   <label className="text-[10px] font-bold text-neutral-400 block mb-1.5">METODE PEMBAGIAN</label>
-                  <div className="grid grid-cols-2 gap-1 bg-neutral-100 dark:bg-neutral-900 p-1 rounded-lg">
+                  <div className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-neutral-100 dark:bg-neutral-900">
                     <button
                       type="button"
                       onClick={() => {
@@ -794,7 +838,7 @@ export default function App() {
                           : 'text-neutral-400'
                       }`}
                     >
-                      <LayoutGrid className="h-3 w-3" /> Jumlah Grup
+                      <LayoutGrid className="w-3 h-3" /> Jumlah Grup
                     </button>
                     <button
                       type="button"
@@ -808,18 +852,32 @@ export default function App() {
                           : 'text-neutral-400'
                       }`}
                     >
-                      <Layers className="h-3 w-3" /> Anggota / Grup
+                      <Layers className="w-3 h-3" /> Anggota / Grup
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSplitMode('separateGender');
+                        setTargetCount(3);
+                      }}
+                      className={`py-1.5 text-[11px] font-medium rounded-md flex items-center justify-center gap-1 transition-all ${
+                        splitMode === 'separateGender'
+                          ? 'bg-white dark:bg-neutral-800 shadow-sm font-semibold'
+                          : 'text-neutral-400'
+                      }`}
+                    >
+                      <X className="w-3 h-3" /> Pisahkan Gender
                     </button>
                   </div>
                 </div>
 
                 <div>
-                  <div className="flex justify-between items-center mb-1">
+                  <div className="flex items-center justify-between mb-1">
                     <label className="text-[10px] font-bold text-neutral-400">
-                      {splitMode === 'numGroups' ? 'TARGET JUMLAH GRUP' : 'MAKS ANGGOTA / GRUP'}
+                      {splitMode === 'numGroups' ? 'TARGET JUMLAH GRUP' : splitMode === 'membersPerGroup' ? 'MAKS ANGGOTA / GRUP' : 'JUMLAH GRUP PER JENIS'}
                     </label>
                     <span className="text-xs font-bold text-neutral-800 dark:text-neutral-200">
-                      {targetCount} {splitMode === 'numGroups' ? 'Grup' : 'Orang'}
+                      {targetCount} {splitMode === 'numGroups' ? 'Grup' : splitMode === 'membersPerGroup' ? 'Orang' : 'Grup'}
                     </span>
                   </div>
 
@@ -827,25 +885,25 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => setTargetCount(prev => Math.max(1, prev - 1))}
-                      className="h-8 w-8 border border-neutral-200 dark:border-neutral-800 rounded-lg flex items-center justify-center hover:bg-neutral-50 dark:hover:bg-neutral-800 text-xs"
+                      className="flex items-center justify-center w-8 h-8 text-xs border rounded-lg border-neutral-200 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-800"
                     >
                       -
                     </button>
                     <input
                       type="range"
                       min="1"
-                      max={splitMode === 'numGroups' ? maxPossibleGroups : maxPossibleSize}
+                      max={maxPossibleGroups}
                       value={targetCount}
                       onChange={(e) => setTargetCount(parseInt(e.target.value) || 1)}
-                      className="flex-1 accent-neutral-800 dark:accent-neutral-200 h-1 bg-neutral-200 dark:bg-neutral-800 rounded-lg appearance-none cursor-pointer"
+                      className="flex-1 h-1 rounded-lg appearance-none cursor-pointer accent-neutral-800 dark:accent-neutral-200 bg-neutral-200 dark:bg-neutral-800"
                     />
                     <button
                       type="button"
                       onClick={() => setTargetCount(prev => {
-                        const max = splitMode === 'numGroups' ? maxPossibleGroups : maxPossibleSize;
+                        const max = maxPossibleGroups;
                         return Math.min(max, prev + 1);
                       })}
-                      className="h-8 w-8 border border-neutral-200 dark:border-neutral-800 rounded-lg flex items-center justify-center hover:bg-neutral-50 dark:hover:bg-neutral-800 text-xs"
+                      className="flex items-center justify-center w-8 h-8 text-xs border rounded-lg border-neutral-200 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-800"
                     >
                       +
                     </button>
@@ -853,7 +911,7 @@ export default function App() {
                 </div>
 
                 {splitMode === 'membersPerGroup' && (
-                  <div className="p-3 bg-neutral-50/50 dark:bg-neutral-900/40 rounded-lg border border-neutral-200/40 dark:border-neutral-800/60">
+                  <div className="p-3 border rounded-lg bg-neutral-50/50 dark:bg-neutral-900/40 border-neutral-200/40 dark:border-neutral-800/60">
                     <label className="text-[9px] font-bold text-neutral-400 block mb-1.5 uppercase tracking-wide">
                       Jika ada anggota sisa
                     </label>
@@ -907,12 +965,12 @@ export default function App() {
 
           </div>
 
-          <div className="lg:col-span-7 space-y-6">
+          <div className="space-y-6 lg:col-span-7">
             
             <div className={`rounded-xl border p-5 transition-all min-h-[460px] flex flex-col justify-between ${currentTheme.card}`}>
               
               <div>
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-4 border-b border-neutral-100 dark:border-neutral-800/80">
+                <div className="flex flex-col justify-between gap-4 pb-4 mb-6 border-b sm:flex-row sm:items-center border-neutral-100 dark:border-neutral-800/80">
                   <div>
                     <span className="text-xs font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
                       Hasil Kelompok
@@ -948,16 +1006,16 @@ export default function App() {
 
                 {isShuffling ? (
                   <div className="flex flex-col items-center justify-center py-20 space-y-3">
-                    <div className="w-10 h-10 border-2 border-neutral-300 dark:border-neutral-700 border-t-neutral-800 dark:border-t-neutral-200 rounded-full animate-spin"></div>
-                    <p className="text-xs font-mono text-neutral-400 uppercase tracking-wider">{shuffleStatusText}</p>
+                    <div className="w-10 h-10 border-2 rounded-full border-neutral-300 dark:border-neutral-700 border-t-neutral-800 dark:border-t-neutral-200 animate-spin"></div>
+                    <p className="font-mono text-xs tracking-wider uppercase text-neutral-400">{shuffleStatusText}</p>
                   </div>
                 ) : shuffledGroups.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-24 text-center space-y-3">
-                    <div className="w-12 h-12 rounded-xl bg-neutral-50 dark:bg-neutral-950/60 border border-neutral-200/60 dark:border-neutral-800/60 flex items-center justify-center text-neutral-400">
-                      <Shuffle className="h-5 w-5 stroke-1" />
+                  <div className="flex flex-col items-center justify-center py-24 space-y-3 text-center">
+                    <div className="flex items-center justify-center w-12 h-12 border rounded-xl bg-neutral-50 dark:bg-neutral-950/60 border-neutral-200/60 dark:border-neutral-800/60 text-neutral-400">
+                      <Shuffle className="w-5 h-5 stroke-1" />
                     </div>
                     <div>
-                      <h4 className="font-bold text-xs text-neutral-600 dark:text-neutral-300">Belum Ada Pembagian</h4>
+                      <h4 className="text-xs font-bold text-neutral-600 dark:text-neutral-300">Belum Ada Pembagian</h4>
                       <p className="text-[11px] text-neutral-400 mt-1 max-w-xs">Tentukan aturan lalu klik tombol Kocok di sebelah kiri.</p>
                     </div>
                   </div>
@@ -1000,7 +1058,7 @@ export default function App() {
                                 <span className="flex items-center gap-1.5 truncate">
                                   <span className="text-neutral-400 text-[9px] font-mono">{mIdx + 1}</span>
                                   <span className={member.gender === 'male' ? 'text-sky-500' : 'text-rose-400'}>
-                                    {member.gender === 'male' ? <Mars className="h-3 w-3" /> : <Venus className="h-3 w-3" />}
+                                    {member.gender === 'male' ? <Mars className="w-3 h-3" /> : <Venus className="w-3 h-3" />}
                                   </span>
                                   {member.name}
                                 </span>
@@ -1016,9 +1074,9 @@ export default function App() {
               </div>
 
               {shuffledGroups.length > 0 && !isShuffling && (
-                <div className="mt-8 pt-4 border-t border-neutral-100 dark:border-neutral-800/80 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-neutral-400">
+                <div className="flex flex-col items-center justify-between gap-3 pt-4 mt-8 text-xs border-t border-neutral-100 dark:border-neutral-800/80 sm:flex-row text-neutral-400">
                   <div className="flex items-center gap-1">
-                    <AlertCircle className="h-3 w-3" />
+                    <AlertCircle className="w-3 h-3" />
                     <span>Tarik kartu anggota untuk memindahkan grup</span>
                   </div>
 
@@ -1027,13 +1085,13 @@ export default function App() {
                       onClick={handleCopyToClipboard}
                       className="flex-1 sm:flex-initial px-3 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-[11px] font-bold flex items-center justify-center gap-1"
                     >
-                      <Copy className="h-3 w-3" /> Salin Teks
+                      <Copy className="w-3 h-3" /> Salin Teks
                     </button>
                     <button
                       onClick={handleDownloadCSV}
                       className="flex-1 sm:flex-initial px-3 py-1.5 rounded-lg bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 hover:opacity-90 text-[11px] font-bold flex items-center justify-center gap-1"
                     >
-                      <Download className="h-3 w-3" /> Ekspor CSV
+                      <Download className="w-3 h-3" /> Ekspor CSV
                     </button>
                   </div>
                 </div>
@@ -1066,15 +1124,15 @@ export default function App() {
 
       </main>
 
-      <footer className="mt-20 border-t border-neutral-200/50 dark:border-neutral-800/60 py-8 bg-white/10 dark:bg-neutral-950/10 backdrop-blur-sm">
-        <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <footer className="py-8 mt-20 border-t border-neutral-200/50 dark:border-neutral-800/60 bg-white/10 dark:bg-neutral-950/10 backdrop-blur-sm">
+        <div className="flex flex-col items-center justify-between max-w-6xl gap-4 px-6 mx-auto sm:flex-row">
           <p className="text-[11px] text-neutral-400 dark:text-neutral-500 font-mono tracking-wide">
             &copy; {new Date().getFullYear()}{' '}
             <a
               href="https://github.com/RakaMuttaqin"
               target="_blank"
               rel="noopener noreferrer"
-              className="font-semibold text-neutral-600 dark:text-neutral-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+              className="font-semibold transition-colors text-neutral-600 dark:text-neutral-300 hover:text-indigo-600 dark:hover:text-indigo-400"
             >
               RakaMuttaqin
             </a>
